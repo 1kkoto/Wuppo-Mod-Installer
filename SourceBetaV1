@@ -8,17 +8,19 @@ import java.awt.GridLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Arrays;
-import java.util.List;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JFileChooser;
@@ -26,8 +28,12 @@ import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.filechooser.FileFilter;
+import java.util.Arrays;
+import java.util.List;
 import com.github.difflib.DiffUtils;
+import com.github.difflib.UnifiedDiffUtils;
 import com.github.difflib.patch.Patch;
+import com.github.difflib.patch.PatchFailedException;
 
 public class Main {
 	
@@ -35,7 +41,7 @@ public class Main {
 	JLabel titleLabel;
 	LaunchHandler cHandler = new LaunchHandler();
 	String WuppoPath;
-	Path OldFile, NewFile, OutputFile;
+	Path OldFile, NewFile, OutputFile, ModFile, BaseFile;
 	File WuppoSave = new File("WuppoSave.txt");
 	
 	public Main() {
@@ -262,7 +268,7 @@ public class Main {
 								try {
 									BufferedReader Oldreader = new BufferedReader(
 											new InputStreamReader(
-													new FileInputStream(selectedOld), "UTF-8"));
+													new FileInputStream(selectedOld), StandardCharsets.UTF_8));
 									StringBuilder OldStringBuilder = new StringBuilder();
 									String OldLine = Oldreader.readLine(); 
 									while (OldLine != null) {
@@ -271,10 +277,9 @@ public class Main {
 									}
 									Oldreader.close();
 									String OldFileContent = OldStringBuilder.toString();
-									List<String> originalContent = Arrays.asList(OldFileContent.split("\n"));
 									BufferedReader Newreader = new BufferedReader(
 											new InputStreamReader(
-													new FileInputStream(selectedNew), "UTF-8"));
+													new FileInputStream(selectedNew), StandardCharsets.UTF_8));
 									StringBuilder NewStringBuilder = new StringBuilder();
 									String NewLine = Newreader.readLine();
 									while (NewLine != null) {
@@ -283,10 +288,11 @@ public class Main {
 									}
 									Newreader.close();
 									String NewFileContent = NewStringBuilder.toString();
-									List<String> modifiedContent = Arrays.asList(NewFileContent.split("\n"));
 									File patchFile = new File(PatchFolder.getAbsolutePath()+"/mod.splenk");
-									PrintWriter modwriter = new PrintWriter(patchFile);
+									List<String> originalContent = Arrays.asList(OldFileContent.split("\n"));
+									List<String> modifiedContent = Arrays.asList(NewFileContent.split("\n"));
 									Patch<String> patch = DiffUtils.diff(originalContent, modifiedContent);
+									PrintWriter modwriter = new PrintWriter(patchFile);
 									modwriter.print(patch);
 									modwriter.close();
 									//Done
@@ -301,7 +307,48 @@ public class Main {
 				}
 				break; }
 			case "loadPatch":
-				
+				//Choose modified file
+				JFileChooser ModChooser = new JFileChooser(".");
+				ModChooser.setFileFilter(new FileFilter() {
+					public String getDescription() {
+						return "splenk files (*.splenk)";
+					}
+					public boolean accept(File selectedMod) {
+						if(selectedMod.isDirectory()) {
+							return true;
+						} else {
+							return selectedMod.getName().endsWith(".splenk");
+						}
+					}
+				});
+				ModChooser.setDialogTitle("Choose your mod");
+			    ModChooser.setAcceptAllFileFilterUsed(false);
+				int Modresponse = ModChooser.showOpenDialog(null);
+				if (Modresponse == JFileChooser.APPROVE_OPTION) {
+					File selectedMod= ModChooser.getSelectedFile();
+				    ModFile = Paths.get(selectedMod.getAbsolutePath());
+					//Choose data.win (automatically)
+					try {
+						String basePath = Files.readAllLines(Paths.get(System.getProperty("user.dir") + "/WuppoSave.txt")).get(0);
+						String dataPath = basePath.replace("Wuppo.exe", "data.win");
+						File dataPathFile = Paths.get(dataPath).toFile();
+						//Patch data.win with modified file and save
+						List<String> original = Files.readAllLines(new File(dataPath).toPath(), StandardCharsets.UTF_8);
+						List<String> mod = Files.readAllLines(ModFile, StandardCharsets.UTF_8);
+						Patch<String> modpatch = UnifiedDiffUtils.parseUnifiedDiff(mod);
+						try {
+							List<String> modresult = DiffUtils.patch(original, modpatch);
+							PrintWriter datamodwriter = new PrintWriter(new OutputStreamWriter(new FileOutputStream(dataPathFile), StandardCharsets.US_ASCII));
+							datamodwriter.print(modresult.toString());
+							datamodwriter.close();
+						} catch (PatchFailedException e) {
+							e.printStackTrace();
+						}
+					} catch (IOException e1) {
+						e1.printStackTrace();
+					}
+				} else {}
+				    
 				break;
 				
 			case "changePath":
